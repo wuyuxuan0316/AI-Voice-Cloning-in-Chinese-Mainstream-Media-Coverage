@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Load the CSV file to check its contents
-file_path = '/Users/wuyuxuan/Documents/dissertation/Data/ThePaper/text/word_PPS1.csv'
+file_path = '/text/word_PPS1.csv'
 data = pd.read_csv(file_path)
 data.head()
 
@@ -19,5 +19,5 @@ wordcloud = WordCloud(font_path=font_path, width=800, height=400, background_col
 plt.figure(figsize=(10, 5))
 plt.imshow(wordcloud, interpolation='bilinear')
 plt.axis("off")
-plt.savefig('/Users/wuyuxuan/Documents/dissertation/Data/ThePaper/image/wordPPS1.png') 
+plt.savefig('/image/wordPPS1.png') 
 plt.show()
