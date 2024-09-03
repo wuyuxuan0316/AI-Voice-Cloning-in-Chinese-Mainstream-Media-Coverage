@@ -1,0 +1,303 @@
+---
+title: "Text mining"
+author: "wu"
+date: "2024-06-29"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Loading required package
+
+```{r}
+# Install packages
+install.packages(c("jiebaR", "tm", "wordcloud", "ggplot2", "dplyr", "readr", "showtext", "sysfonts", "openxlsx", "stopwords"))
+```
+
+```{r}
+# Load the necessary libraries
+library(jiebaR)
+library(tm)
+library(wordcloud)
+library(ggplot2)
+library(dplyr)
+library(readr)
+
+```
+
+```{r}
+# Read the text file
+PPS1 <- read_lines("ThePaperS1.txt", locale = locale(encoding = "UTF-8"))
+corpus <- Corpus(VectorSource(PPS1))
+
+```
+
+##Clean texts
+```{r}
+corpus1 <- tm_map(corpus, content_transformer(tolower)) 
+corpus1 <- tm_map(corpus1, removePunctuation)
+corpus2 <- tm_map(corpus1, removeNumbers)
+corpus3 <- tm_map(corpus2, stripWhitespace)
+#Remove all special characters and punctuations
+corpus4 <- tm_map(corpus3, content_transformer(function(x) {
+  gsub("[！？｡＂＃＄％＆＇（）＊＋，－／：；＜＝＞＠［＼］＾＿｀｛｜丨｝～、。，·ˉˇ¨〃々—～‖…‘’“”〔〕〈〉《》「」『』【】︻︼﹍﹎￥％＋－＜＞＝～｜￤＆＊＠§※☆★○●◎◇◆□■△▲※〒→←↑↓〓︵︷︿︹︽︻︶︸﹀︺︾︼︵︶︷︸︹︺︻︼︽︾︿﹀﹁﹂﹃﹄︙︰︳︴︵︶︷︸︹︺︻︼︽︾︿﹀﹁﹂﹃﹄﹙﹚﹛﹜﹝﹞‘’“”〝〞〟＂｀´ˆˇˉ˘˙˚˛˜˝‘’“”‹›«»„‟〝〞〟＂]+", "", x, perl = TRUE)
+}))
+
+```
+```{r}
+#save processed texts
+texts <- sapply(corpus4, as.character)
+writeLines(texts, "text/processed_ThePaperS1.txt")
+
+
+```
+
+# Chinese cutter
+```{r}
+segmenter <- worker()
+seg_corpus <- tm_map(corpus4, content_transformer(function(x) {
+  unlist(segment(x, segmenter))
+}))
+```
+
+# Word Frequency
+
+```{r}
+word_freqs <- table(seg_corpus$content)
+
+df1 <- as.data.frame(word_freqs, stringsAsFactors = FALSE)
+colnames(df1) <- c("word", "freq")
+
+library(dplyr)
+df1 <- df1 %>%
+  arrange(desc(freq))
+
+head(df1)
+
+```
+
+
+#Remove stopwords
+```{r}
+library(stopwords)
+en_stopwords <- stopwords(language = "en")
+cn_stopwords <- read_lines("cn_stopwords.txt", locale = locale(encoding = "UTF-8"))
+
+# Remove single-character words which has no meaning in Chinese
+df2 <- df1 %>%
+  filter(nchar(word) > 1)
+
+df3 <- df2 %>%
+  filter(!word %in% cn_stopwords) %>%  # Remove stopwords
+  filter(!word %in% en_stopwords) %>% 
+  filter(!word %in% c("ai", "音乐", "人工智能"))  # Remove specific high-frequency terms
+
+head(df3)
+
+# Due to the keyword matching method used in article retrieval, the occurrence frequency of the search theme terms "AI", "音乐" (music), and "人工智能" (artificial intelligence) is significantly higher than other terms. These terms are removed to focus on the frequency distribution of other vocabulary.
+
+```
+
+
+```{r, include=FALSE}
+# Save the cleaned data as a CSV file
+write.csv(df3, "text/word_PPS1.csv", row.names = FALSE)
+```
+Then use Python to translate the processed word frequency file into corresponding English, with manual proofreading; since the word cloud function in R does not support generating word cloud images with mixed languages, use Python to generate the word cloud.
+
+## Visualization
+```{r}
+# Read the translated word frequency file
+df4 <- read_csv("text/translated_PPS1.csv")
+df4 <- df4 %>%
+  filter(!english_word %in% en_stopwords) 
+
+df5 <- df4 %>% 
+  arrange(desc(freq)) %>%  
+  slice_head(n = 25)    
+
+p1 <- ggplot(df5, aes(x = reorder(word, freq), y = freq)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  coord_flip() +  
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  labs(x = "Word", y = "Frequencies", title = "Word Frequency Distribution") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),  
+        axis.title.y = element_text(angle = 0, vjust = 0.5)) 
+
+p1e <- ggplot(df5, aes(x = reorder(english_word, freq), y = freq)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  coord_flip() +  
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  labs(x = "Word", y = "Frequencies", title = "Word Frequency Distribution") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8), 
+        axis.title.y = element_text(angle = 0, vjust = 0.5))  
+
+# Output the plots
+print(p1)
+print(p1e)
+ggsave("image/freqPPS1.png", plot = p1, width = 10, height = 8, dpi = 300)
+ggsave("image/freqPPS1e.png", plot = p1e, width = 10, height = 8, dpi = 300)
+```
+
+
+##Sentiment Analysis
+
+```{r}
+library(openxlsx)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Load the emotion dictionary
+emotion_dict <- read.xlsx("dictionary/情感词汇本体.xlsx")
+emotion_map <- setNames(emotion_dict$情感分类, emotion_dict$词语)
+
+# Tag emotions
+df4$emotion <- emotion_map[df4$word]
+
+# Extract emotion intensity and polarity matching the emotion dictionary
+df4$intensity <- emotion_dict$强度[match(df4$word, emotion_dict$词语)]
+df4$polarity <- emotion_dict$极性[match(df4$word, emotion_dict$词语)]
+
+
+```
+
+
+```{r}
+# Adjust polarity and sentiment classification
+df4 <- df4 %>%
+  mutate(
+    polarity_numeric = case_when(
+      polarity == 0 ~ 0,  # Neutral: no impact
+      polarity == 1 ~ 1,  # Positive
+      polarity == 2 ~ -1, # Negative
+      polarity == 3 ~ 0   # Both: may require different handling based on analysis needs
+    ),
+    sentiment = case_when(
+      polarity == 0 ~ "Neutral",   
+      polarity == 1 ~ "Positive",  
+      polarity == 2 ~ "Negative",  
+      polarity == 3 ~ "Both"       
+    )
+  )
+
+# Count the total for each sentiment category
+sentiment_counts <- df4 %>%
+  filter(sentiment %in% c("Neutral", "Positive", "Negative", "Both")) %>%
+  group_by(sentiment) %>%
+  summarize(count = n(), .groups = "drop")
+
+# Calculate percentages
+total_count <- sum(sentiment_counts$count)  
+sentiment_counts <- sentiment_counts %>%
+  mutate(percentage = count / total_count * 100)
+
+print(sentiment_counts)
+
+```
+
+
+```{r}
+# Filter data with non-NA emotions
+df_filtered <- df4 %>%
+  filter(!is.na(emotion)) %>%
+  group_by(emotion) %>%
+  summarize(total_freq = sum(freq)) 
+
+# Create a bar chart for emotion distribution
+p2 <- ggplot(df_filtered, aes(x = emotion, y = total_freq, fill = emotion)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = total_freq), vjust = -0.5, color = "black", size = 3) +  
+  theme_minimal() +
+  labs(x = "Emotion", y = "Frequency", title = "Stage1-The Paper-Sentiment") +
+theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(breaks = seq(0, max(df_filtered$total_freq), by = 500))
+
+ggsave("image/emotionPPS1.png", plot = p2, width = 10, height = 8, dpi = 300)
+print(p2)
+```
+
+
+```{r}
+# Filter data with non-NA sentiments and adjust the ordering and slicing of the data
+df6 <- df4 %>%
+  filter(!is.na(sentiment)) %>%
+  arrange(desc(freq)) %>%  
+  slice_head(n = 25) %>% 
+  mutate(sentiment = factor(sentiment, levels = c("Neutral", "Positive", "Negative", "Both")))
+
+# Create the chart with proper labels and a color scheme that includes all categories
+p3 <- ggplot(df6, aes(x = reorder(word, freq), y = freq, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  coord_flip() +
+  scale_fill_manual(values = c("Neutral" = "grey", "Positive" = "turquoise", "Negative" = "orange", "Both" = "purple")) +
+  labs(x = "Word", y = "Frequency", title = "Sentiment Distribution of Top Words") +
+  theme_minimal()
+
+p3e <- ggplot(df6, aes(x = reorder(english_word, freq), y = freq, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  coord_flip() +
+  scale_fill_manual(values = c("Neutral" = "grey", "Positive" = "turquoise", "Negative" = "orange", "Both" = "purple")) +
+  labs(x = "Word", y = "Frequency", title = "Sentiment Distribution of Top Words") +
+    theme_minimal()
+
+# Display and save the charts
+print(p3e)
+ggsave("image/sentimentPPS1e.png", plot = p3e, width = 10, height = 8, dpi = 300)
+
+print(p3)
+ggsave("image/sentimentPPS1.png", plot = p3, width = 10, height = 8, dpi = 300)
+
+```
+
+
+```{r}
+# Filter top data for negative sentiment
+df_negative <- df4 %>%
+  filter(sentiment == "Negative")%>%
+  arrange(desc(freq)) %>%  
+  slice_head(n = 15)
+
+# Create the plot for negative sentiment words
+p_negative <- ggplot(df_negative, aes(x = reorder(word, freq), y = freq, fill = sentiment)) +
+  geom_bar(stat = "identity") +  # Use bars to represent frequency
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  coord_flip() +  # Flip coordinates for better readability of words
+  scale_y_continuous(breaks = seq(0, max(df_negative$freq), by = 50)) +  
+  scale_fill_manual(values = c("Negative" = "orange")) +  # Set color for negative sentiment
+  labs(x = "Word", y = "Frequency", title = "Frequency Distribution of Negative Sentiment Words") +
+  theme_minimal()  # Use a minimalistic theme
+
+# Display the plot for negative sentiment words
+print(p_negative)
+
+# Create the plot for negative sentiment words in english
+pe_negative <- ggplot(df_negative, aes(x = reorder(english_word, freq), y = freq, fill = sentiment)) +
+  geom_bar(stat = "identity") +  # Use bars to represent frequency
+  geom_text(aes(label = freq, hjust = -0.3), color = "black", size = 2) +
+  coord_flip() +  # Flip coordinates for better readability of words
+  scale_y_continuous(breaks = seq(0, max(df_negative$freq), by = 50)) +  # Set y-axis breaks every 1 unit
+  scale_fill_manual(values = c("Negative" = "orange")) +  # Set color for negative sentiment
+  labs(x = "Word", y = "Frequency", title = "Frequency Distribution of Negative Sentiment Words") +
+  theme_minimal()  # Use a minimalistic theme
+
+# Display the plot for negative sentiment words
+print(pe_negative)
+
+# Save the plot to a file
+ggsave("image/negative_sentiment_PDS1.png", plot = p_negative, width = 10, height = 8, dpi = 300)
+ggsave("image/negative_sentiment_PDS1e.png", plot = pe_negative, width = 10, height = 8, dpi = 300)
+```
+
+
+
+
+
+
+
+
