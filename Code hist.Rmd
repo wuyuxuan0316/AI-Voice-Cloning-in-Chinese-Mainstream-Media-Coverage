@@ -1,0 +1,108 @@
+---
+title: "Text mining"
+author: "wu"
+date: "2024-06-29"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Loading required package
+
+```{r}
+# Install packages if needed
+install.packages(c("jiebaR", "tm", "wordcloud", "ggplot2", "dplyr", "readr", "showtext", "sysfonts", "openxlsx", "stopwords", "lubridate"))
+```
+
+```{r}
+library(jiebaR)
+library(tm)
+library(wordcloud)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+
+```
+
+## Histogram
+
+```{r}
+# 读取三个文件
+data1 <- read_csv("ThePaper/ThePaperS1.csv")
+data2 <- read_csv("ThePaper/ThePaperS2.csv")
+data3 <- read_csv("ThePaper/ThePaperS3.csv")
+
+# 合并这三个数据框
+combined_data1 <- bind_rows(data1, data2, data3)
+
+# 将publicationdate列转换为日期格式
+combined_data1$publicationdate <- dmy(combined_data1$publicationdate)
+
+# 使用floor_date处理日期数据，按月分类
+combined_data1$month <- floor_date(combined_data1$publicationdate, "month")
+
+# 计算每月的文章数
+monthly_counts1 <- combined_data1 %>%
+  group_by(month) %>%
+  summarise(count = n())
+
+# 绘制直方图
+h1 = ggplot(monthly_counts1, aes(x = month, y = count)) +
+  geom_col(fill = "skyblue") +  # 使用geom_col来绘制柱状图
+  geom_text(aes(label = count), vjust = -0.5, color = "black", size = 3) +  # 在柱子上方添加数值标签
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%m") +
+  scale_y_continuous(breaks = seq(0, max(monthly_counts1$count, na.rm = TRUE), by = 10)) +  # 设置y轴标签间隔
+  labs(title = "Publication Distribution",
+       x = " ",  # x轴标签为空格
+       y = "Number of Articles") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(h1)
+ggsave("PPhist.png", plot = h1, width = 10, height = 8, dpi = 300)
+```
+
+
+```{r}
+# 读取三个文件
+data01 <- read_csv("PeoplesDaily/PeoplesDailyS1.csv")
+data02 <- read_csv("PeoplesDaily/PeoplesDailyS2.csv")
+data03 <- read_csv("PeoplesDaily/PeoplesDailyS3.csv")
+
+# 合并这三个数据框
+combined_data2 <- bind_rows(data01, data02, data03)
+
+# 将publicationdate列转换为日期格式
+combined_data2$publicationdate <- dmy(combined_data2$publicationdate)
+
+# 使用floor_date处理日期数据，按月分类
+combined_data2$month <- floor_date(combined_data2$publicationdate, "month")
+
+# 计算每月的文章数
+monthly_counts2 <- combined_data %>%
+  group_by(month) %>%
+  summarise(count = n())
+
+# 绘制直方图
+h2 = ggplot(monthly_counts2, aes(x = month, y = count)) +
+  geom_col(fill = "skyblue") +  # 使用geom_col来绘制柱状图
+  geom_text(aes(label = count), vjust = -0.5, color = "black", size = 3) +  # 在柱子上方添加数值标签
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%m") +
+  scale_y_continuous(breaks = seq(0, max(monthly_counts2$count, na.rm = TRUE), by = 1)) +  # 设置y轴标签间隔
+  labs(title = "Publication Distribution",
+       x = " ",  # x轴标签为空格
+       y = "Number of Articles") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(h2)
+ggsave("PDhist.png", plot = h2, width = 10, height = 8, dpi = 300)
+```
+
+
+
+
+
+
